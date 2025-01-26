@@ -5,12 +5,14 @@ import { ConfigService } from '@nestjs/config';
 import { ConfigModule } from './config';
 import { ApiFetcher, DataFetcher, FetchService } from './fetch';
 import { DatabaseModule, CampaignReportService } from './database';
+import { ApiModule } from './api';
 
 @Module({
   imports: [
     ConfigModule,
     ScheduleModule.forRoot(),
-    DatabaseModule
+    DatabaseModule,
+    ApiModule
   ],
   controllers: [],
   providers: [
