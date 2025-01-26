@@ -64,7 +64,6 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
   private getDateRange() {
     const end = new Date();
     const start = new Date(end);
-    start.setMonth(start.getMonth() - 1); //? for testing only
     start.setHours(0, 0, 0, 0);
     
     return { start, end };
