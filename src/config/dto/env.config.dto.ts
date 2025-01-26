@@ -1,12 +1,17 @@
 import { Type } from 'class-transformer';
-import { IsNumber, IsOptional, ValidateNested } from 'class-validator';
+import { IsNumber, IsString, IsOptional, ValidateNested } from 'class-validator';
 import { ApiConfigDto } from './api.config.dto';
 import { DbConfigDto } from './db.config.dto';
 
-export class EnvironmentVariables {
-  @IsNumber()
-  port: number;
+export class RequiredEnvironmentVariables {
+    @IsNumber()
+    port: number;
+  
+    @IsString()
+    fetch_cron: string;
+}
 
+export class EnvironmentVariables extends RequiredEnvironmentVariables {
   @IsOptional()
   @ValidateNested()
   @Type(() => DbConfigDto)
@@ -16,4 +21,4 @@ export class EnvironmentVariables {
   @ValidateNested()
   @Type(() => ApiConfigDto)
   api?: ApiConfigDto;
-} 
+}

@@ -1,8 +1,12 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { EnvironmentVariables } from './dto/env.config.dto';
-import { DbConfigDto } from './dto/db.config.dto';
-import { ApiConfigDto } from './dto/api.config.dto';
+
+import { 
+    RequiredEnvironmentVariables, 
+    EnvironmentVariables, 
+    DbConfigDto, 
+    ApiConfigDto 
+} from './dto';
 
 function isString(value: unknown): value is string {
   return typeof value === 'string';
@@ -32,6 +36,20 @@ const validatePort = (config: Record<string, unknown>): number => {
   return parseInt(config.PORT, 10);
 }
 
+const validateFetchCron = (config: Record<string, unknown>): string => {
+    if (!isString(config.FETCH_CRON)) {
+        console.error('❗ FETCH_CRON is required!');
+        throw new Error('FETCH_CRON is required');
+    }
+
+    return config.FETCH_CRON;
+}
+
+const requiredValidations: [keyof RequiredEnvironmentVariables, (config: Record<string, unknown>) => any][] = [
+  ['port', validatePort],
+  ['fetch_cron', validateFetchCron]
+];
+
 const logConfigWarnings = (dbConfig: Partial<DbConfigDto>, apiConfig: Partial<ApiConfigDto>) => {
   const dbMissing = DbConfigDto.getMissingProperties(dbConfig);
   const apiMissing = ApiConfigDto.getMissingProperties(apiConfig);
@@ -54,7 +72,13 @@ const logConfigWarnings = (dbConfig: Partial<DbConfigDto>, apiConfig: Partial<Ap
 }
 
 export const validate = (config: Record<string, unknown>) => {
-  const port = validatePort(config);
+  const {
+    port, 
+    fetch_cron
+  } = requiredValidations.reduce((acc, [k, validateFn]) => ({
+    ...acc,
+    [k]: validateFn(config)
+  }), {}) as RequiredEnvironmentVariables;
   const dbConfig = parseDbConfig(config);
   const apiConfig = parseApiConfig(config);
   
@@ -64,6 +88,7 @@ export const validate = (config: Record<string, unknown>) => {
     EnvironmentVariables,
     {
       port,
+      fetch_cron,
       db: dbMissing.length === 0 ? dbConfig : undefined,
       api: apiMissing.length === 0 ? apiConfig : undefined,
     },

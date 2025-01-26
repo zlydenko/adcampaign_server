@@ -1,0 +1,16 @@
+import { Observable } from 'rxjs';
+import { Injectable } from '@nestjs/common';
+
+export interface FetchResult<T> {
+    data: T[];
+    timestamp: Date;
+}
+
+@Injectable()
+export abstract class DataFetcher<T> {
+  protected abstract fetch(): Observable<FetchResult<T>>;
+  protected abstract validateData(data: unknown): data is T[];
+  
+  abstract start(): Observable<FetchResult<T>>;
+  abstract stop(): void;
+} 
