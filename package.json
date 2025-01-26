@@ -8,10 +8,11 @@
     "start:debug": "nest start --debug --watch",
     "build": "nest build",
     "start:prod": "node dist/main",
+
     "typeorm": "typeorm-ts-node-commonjs",
-    "migration:generate": "npm run typeorm migration:generate -- -d src/storage/migrations/config.ts",
-    "migration:run": "npm run typeorm migration:run -- -d src/storage/migrations/config.ts",
-    "migration:revert": "npm run typeorm migration:revert -- -d src/storage/migrations/config.ts"
+    "migration:generate": "npm run typeorm migration:generate -- -d dist/database/migrations/config.js",
+    "migration:run": "npm run typeorm migration:run -- -d dist/database/migrations/config.js",
+    "migration:revert": "npm run typeorm migration:revert -- -d dist/database/migrations/config.js"
   },
   "keywords": [],
   "author": "anton zlydenko",
