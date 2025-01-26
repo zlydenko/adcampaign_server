@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { Observable, Subject, from, firstValueFrom, map, catchError } from 'rxjs';
+import { Observable, Subject, from, firstValueFrom, map, catchError, tap } from 'rxjs';
 import { CronJob } from 'cron';
 import { validateSync } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
@@ -11,6 +11,7 @@ import { AxiosRequestConfig } from 'axios';
 
 import { DataFetcher, FetchResult } from '../fetcher';
 import { CampaignEvent, CampaignEventDto, EventName, FetchSuccessDto } from '../dto';
+import { CampaignReportService } from '../../database';
 
 @Injectable()
 export class ApiFetcher extends DataFetcher<CampaignEvent> {
@@ -39,7 +40,8 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
   constructor(
     private readonly configService: ConfigService,
     private readonly cronExpression: string,
-    private schedulerRegistry: SchedulerRegistry
+    private schedulerRegistry: SchedulerRegistry,
+    private campaignReportService: CampaignReportService
   ) {
     super();
     this.initializeApi();
@@ -159,14 +161,25 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
       this.state.paginationQueue.delete(item);
 
       try {
-        const response = await this.makeRequest(this.constructUrl(item.eventName));
+        const response = await this.makeRequest({ 
+          url: item.url, 
+          headers: this.api.headers 
+        });
 
         const events = this.parseEvents(response.data.csv);
         if (this.validateData(events)) {
-          this.state.result$.next({
+          const result = {
             data: events,
             timestamp: new Date()
-          });
+          };
+          
+          this.state.result$.next(result);
+
+          if (events.length > 0) {
+            this.campaignReportService.saveReports(events).subscribe({
+              error: (error) => this.handleError(error, 'Failed to save paginated reports to database')
+            });
+          }
         }
 
         if (response.data.pagination?.next) {
@@ -199,6 +212,12 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
     try {
       const result = await firstValueFrom(this.fetch());
       this.state.result$.next(result);
+
+      if (result.data.length > 0) {
+        this.campaignReportService.saveReports(result.data).subscribe({
+          error: (error) => this.handleError(error, 'Failed to save reports to database')
+        });
+      }
 
       if (this.state.paginationQueue.size > 0) {
         await this.handlePagination();
