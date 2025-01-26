@@ -108,4 +108,22 @@ export class PaginatedAggregatedReportsDto {
 
   @ApiProperty()
   limit: number;
+}
+
+export class FetchQueryDto {
+  @ApiProperty({ 
+    required: true,
+    example: 'YYYY-MM-DD HH:00:00',
+    description: 'Start date in format YYYY-MM-DD HH:00:00'
+  })
+  @IsDateString()
+  from_date: string;
+
+  @ApiProperty({ 
+    required: true,
+    example: 'YYYY-MM-DD HH:00:00',
+    description: 'End date in format YYYY-MM-DD HH:00:00'
+  })
+  @IsDateString()
+  to_date: string;
 } 

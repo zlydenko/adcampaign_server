@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { Observable, Subject, from, firstValueFrom, map, catchError, tap } from 'rxjs';
+import { Observable, Subject, from, firstValueFrom, map, catchError, mergeMap, of } from 'rxjs';
 import { CronJob } from 'cron';
 import { validateSync } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
@@ -75,12 +75,22 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
   }
 
-  private constructUrl(event_name: EventName): AxiosRequestConfig {
-    const { start, end } = this.getDateRange();
+  private constructUrl(
+    event_name: EventName,
+    fromDate?: string,
+    toDate?: string
+  ): AxiosRequestConfig {
     const url = new URL(this.api.url);
+    
+    if (fromDate && toDate) {
+      url.searchParams.append('from_date', fromDate);
+      url.searchParams.append('to_date', toDate);
+    } else {
+      const { start, end } = this.getDateRange();
+      url.searchParams.append('from_date', this.formatDate(start));
+      url.searchParams.append('to_date', this.formatDate(end));
+    }
 
-    url.searchParams.append('from_date', this.formatDate(start));
-    url.searchParams.append('to_date', this.formatDate(end));
     url.searchParams.append('event_name', event_name);
     url.searchParams.append('take', ApiFetcher.CONFIG.BATCH_SIZE.toString());
 
@@ -264,5 +274,25 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
 
     const events = data.map(item => plainToInstance(CampaignEventDto, item));
     return events.every(event => validateSync(event).length === 0);
+  }
+
+  override fetchDateRange(fromDate: string, toDate: string): Observable<void> {
+    const urls = ApiFetcher.CONFIG.EVENT_TYPES.map(eventName => 
+      this.constructUrl(eventName, fromDate, toDate)
+    );
+
+    return from(urls).pipe(
+      mergeMap(config => 
+        from(this.makeRequest(config)).pipe(
+          mergeMap(response => {
+            const events = this.parseEvents(response.data.csv);
+            if (this.validateData(events) && events.length > 0) {
+              return this.campaignReportService.saveReports(events);
+            }
+            return of(void 0);
+          })
+        )
+      )
+    );
   }
 } 

@@ -2,10 +2,11 @@ import { Module } from '@nestjs/common';
 import { VersioningType, INestApplication } from '@nestjs/common';
 
 import { DatabaseModule } from '../database';
+import { FetchModule } from '../fetch';
 import { CampaignReportsController } from './controllers/campaign-reports.controller';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, FetchModule],
   controllers: [CampaignReportsController],
 })
 export class ApiModule {

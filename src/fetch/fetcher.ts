@@ -15,4 +15,5 @@ export abstract class DataFetcher<T> {
   
   abstract start(): Observable<FetchResult<T>>;
   abstract stop(): void;
+  abstract fetchDateRange(fromDate: string, toDate: string): Observable<void>;
 }

@@ -1,13 +1,13 @@
-import { Controller, Get, Query, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Query, UsePipes, ValidationPipe, Post } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
 import { CampaignReportService } from '../../database';
+import { CampaignEvent, DataFetcher } from '../../fetch';
 import {
-  PaginatedCampaignReportsDto,
-  PaginationQueryDto,
   AggregatedQueryDto,
-  PaginatedAggregatedReportsDto
+  PaginatedAggregatedReportsDto,
+  FetchQueryDto
 } from '../dto/campaign-reports.dto';
 
 @ApiTags('Campaign Reports')
@@ -16,24 +16,10 @@ import {
   version: '1'
 })
 export class CampaignReportsController {
-  constructor(private campaignReportService: CampaignReportService) {}
-
-//   @Get()
-//   @UsePipes(new ValidationPipe({ transform: true }))
-//   @ApiOperation({ summary: 'Get paginated campaign reports' })
-//   @ApiResponse({
-//     status: 200,
-//     description: 'Returns paginated campaign reports',
-//     type: PaginatedCampaignReportsDto
-//   })
-//   getReports(
-//     @Query() query: PaginationQueryDto
-//   ): Observable<PaginatedCampaignReportsDto> {
-//     const page = query.page || 1;
-//     const limit = query.limit || 10;
-
-//     return this.campaignReportService.getReports(page, limit);
-//   }
+  constructor(
+    private campaignReportService: CampaignReportService,
+    private dataFetcher: DataFetcher<CampaignEvent>
+  ) {}
 
   @Get('aggregated')
   @UsePipes(new ValidationPipe({ transform: true }))
@@ -55,5 +41,17 @@ export class CampaignReportsController {
       page,
       take
     );
+  }
+
+  @Post('fetch')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @ApiOperation({ summary: 'Initiate data fetch for date range' })
+  @ApiResponse({
+    status: 200,
+    description: 'Fetch initiated successfully'
+  })
+  fetchData(@Query() query: FetchQueryDto): Observable<void> {
+    const { from_date, to_date } = query;
+    return this.dataFetcher.fetchDateRange(from_date, to_date);
   }
 } 
