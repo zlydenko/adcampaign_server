@@ -1,15 +1,34 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
+import { ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { SchedulerRegistry } from '@nestjs/schedule';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { ConfigModule } from './config';
-import { ApiFetcher, FetchService, DataFetcher } from './fetch';
+import { StorageModule } from './storage';
+import { ApiFetcher, DataFetcher, FetchService } from './fetch';
+import { CampaignReport } from './storage/entities';
 
 @Module({
   imports: [
     ConfigModule,
-    ScheduleModule.forRoot()
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        type: 'postgres',
+        host: configService.getOrThrow('db.host'),
+        port: configService.getOrThrow('db.port'),
+        username: configService.getOrThrow('db.user'),
+        password: configService.getOrThrow('db.pass'),
+        database: configService.getOrThrow('db.name'),
+        entities: [CampaignReport],
+        migrations: ['dist/storage/migrations/*.js'],
+        migrationsRun: true,
+        synchronize: false
+      })
+    }),
+    ScheduleModule.forRoot(),
+    StorageModule,
   ],
   controllers: [],
   providers: [

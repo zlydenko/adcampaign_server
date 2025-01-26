@@ -1,4 +1,4 @@
-import { IsNumber, IsString } from 'class-validator';
+import { IsString, IsNumber } from 'class-validator';
 
 export class DbConfigDto {
   @IsString()
@@ -13,8 +13,11 @@ export class DbConfigDto {
   @IsString()
   pass: string;
 
+  @IsString()
+  name: string;
+
   static isEmpty(config: Partial<DbConfigDto>): boolean {
-    return !config.host && !config.port && !config.user && !config.pass;
+    return !config.host && !config.port && !config.user && !config.pass && !config.name;
   }
 
   static getMissingProperties(config: Partial<DbConfigDto>): string[] {
@@ -23,6 +26,7 @@ export class DbConfigDto {
     if (!config.port) missing.push('DB_PORT');
     if (!config.user) missing.push('DB_USER');
     if (!config.pass) missing.push('DB_PASS');
+    if (!config.name) missing.push('DB_NAME');
     return missing;
   }
 } 
