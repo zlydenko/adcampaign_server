@@ -1,22 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { from, Observable } from 'rxjs';
+import { from, Observable, map } from 'rxjs';
 
-import { Storage } from '../storage';
-import { CampaignEvent } from '../../fetch';
-import { CampaignReport } from '../entities';
+import { CampaignReport } from '../entities/campaign-report.entity';
 
 @Injectable()
-export class PostgresStorage extends Storage<CampaignEvent> {
+export class CampaignReportService {
   constructor(
     @InjectRepository(CampaignReport)
     private campaignReportRepository: Repository<CampaignReport>
-  ) {
-    super();
-  }
+  ) {}
 
-  save(reports: CampaignEvent[]): Observable<void> {
+  saveReports(reports: Omit<CampaignReport, 'id'>[]): Observable<void> {
     return from(
       this.campaignReportRepository
         .createQueryBuilder()
@@ -25,6 +21,8 @@ export class PostgresStorage extends Storage<CampaignEvent> {
         .values(reports)
         .orIgnore()
         .execute()
+    ).pipe(
+      map(() => void 0)
     );
   }
 } 

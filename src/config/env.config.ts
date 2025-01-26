@@ -18,6 +18,7 @@ const parseDbConfig = (config: Record<string, unknown>): Partial<DbConfigDto> =>
     ...(isString(config.DB_PORT) && { port: parseInt(config.DB_PORT, 10) }),
     ...(isString(config.DB_USER) && { user: config.DB_USER }),
     ...(isString(config.DB_PASS) && { pass: config.DB_PASS }),
+    ...(isString(config.DB_NAME) && { name: config.DB_NAME }),
   };
 }
 

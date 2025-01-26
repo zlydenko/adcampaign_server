@@ -1,10 +1,11 @@
-import { Entity, Column, Index } from 'typeorm';
-
-import { EventName } from '../../fetch';
+import { Entity, Column, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('campaign_reports')
 @Index(['event_time', 'client_id', 'event_name'], { unique: true })
 export class CampaignReport {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+  
   @Column()
   campaign: string;
 
@@ -28,9 +29,9 @@ export class CampaignReport {
 
   @Column({
     type: 'enum',
-    enum: EventName
+    enum: ['purchase', 'install']
   })
-  event_name: EventName;
+  event_name: string;
 
   @Column()
   event_time: string;
