@@ -1,23 +1,19 @@
-import { URL } from 'url';
 import axios from 'axios';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { Observable, Subject, from, firstValueFrom, map, catchError, mergeMap, of } from 'rxjs';
 import { CronJob } from 'cron';
-import { validateSync } from 'class-validator';
-import { plainToInstance } from 'class-transformer';
-import { AxiosRequestConfig } from 'axios';
 
 import { CampaignReportService } from '../../database';
 import { DataFetcher, FetchResult } from '../fetcher';
-import { CampaignEvent, CampaignEventDto, EventName, FetchSuccessDto } from '../dto';
+import { CampaignEvent, CampaignEventDto, EventName } from '../dto';
 import { Parser } from '../parser';
+import { ExternalApiService } from '../utilities';
 
 @Injectable()
 export class ApiFetcher extends DataFetcher<CampaignEvent> {
   private static readonly CONFIG = {
-    BATCH_SIZE: 1000,
     PAGINATION_DELAY: 1000,
     EVENT_TYPES: [EventName.PURCHASE, EventName.INSTALL]
   } as const;
@@ -29,14 +25,7 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
     cronJob: undefined as CronJob | undefined
   };
 
-  private readonly api = {
-    url: '',
-    key: '',
-    headers: { 
-      Accept: 'application/json',
-      'x-api-key': ''
-    } as Record<string, string>
-  };
+  private readonly _externalApi: ExternalApiService;
 
   constructor(
     private readonly _config: ConfigService,
@@ -46,14 +35,11 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
     private parser: Parser<string, CampaignEventDto>
   ) {
     super();
-    this.initializeApi();
     this.initializeCronJob();
-  }
-
-  private initializeApi(): void {
-    this.api.url = this._config.getOrThrow('api.url');
-    this.api.key = this._config.getOrThrow('api.key');
-    this.api.headers['x-api-key'] = this.api.key;
+    this._externalApi = new ExternalApiService(
+      this._config.getOrThrow('api.url'),
+      this._config.getOrThrow('api.key')
+    );
   }
 
   private initializeCronJob(): void {
@@ -63,59 +49,9 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
     );
   }
 
-  private getDateRange() {
-    const end = new Date();
-    const start = new Date(end);
-    start.setHours(0, 0, 0, 0);
-    
-    return { start, end };
-  }
-
-  private formatDate(date: Date): string {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-  }
-
-  private constructUrl(
-    event_name: EventName,
-    fromDate?: string,
-    toDate?: string
-  ): AxiosRequestConfig {
-    const url = new URL(this.api.url);
-    
-    if (fromDate && toDate) {
-      url.searchParams.append('from_date', fromDate);
-      url.searchParams.append('to_date', toDate);
-    } else {
-      const { start, end } = this.getDateRange();
-      url.searchParams.append('from_date', this.formatDate(start));
-      url.searchParams.append('to_date', this.formatDate(end));
-    }
-
-    url.searchParams.append('event_name', event_name);
-    url.searchParams.append('take', ApiFetcher.CONFIG.BATCH_SIZE.toString());
-
-    return {
-      url: url.toString(),
-      headers: this.api.headers,
-      method: 'GET'
-    };
-  }
-
-  private async makeRequest(config: AxiosRequestConfig): Promise<FetchSuccessDto> {
-    const { data } = await axios(config);
-    const response = plainToInstance(FetchSuccessDto, data);
-    
-    if (validateSync(response).length > 0) {
-      throw new Error('Invalid response format');
-    }
-
-    return response;
-  }
-
   private async fetchEventType(eventName: EventName): Promise<CampaignEvent[]> {
     try {
-      const response = await this.makeRequest(this.constructUrl(eventName));
+      const response = await this._externalApi.makeRequest(this._externalApi.constructUrl(eventName));
       const events = this.parser.parse(response.data.csv);
 
       const { data: parsedData, errors: parsingErrors } = events;
@@ -156,9 +92,9 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
       this.state.paginationQueue.delete(item);
 
       try {
-        const response = await this.makeRequest({ 
+        const response = await this._externalApi.makeRequest({ 
           url: item.url, 
-          headers: this.api.headers 
+          headers: this._externalApi.getHeaders()
         });
 
         const events = this.parser.parse(response.data.csv);
@@ -260,12 +196,12 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
 
   override fetchDateRange(fromDate: string, toDate: string): Observable<void> {
     const urls = ApiFetcher.CONFIG.EVENT_TYPES.map(eventName => 
-      this.constructUrl(eventName, fromDate, toDate)
+      this._externalApi.constructUrl(eventName, undefined, fromDate, toDate)
     );
 
     return from(urls).pipe(
       mergeMap(config => 
-        from(this.makeRequest(config)).pipe(
+        from(this._externalApi.makeRequest(config)).pipe(
           mergeMap(response => {
             const events = this.parser.parse(response.data.csv);
             const { data: parsedData, errors: parsingErrors } = events;
