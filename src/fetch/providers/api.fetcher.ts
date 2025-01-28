@@ -9,23 +9,22 @@ import { CampaignReportService } from '../../database';
 import { DataFetcher, FetchResult } from '../fetcher';
 import { CampaignEvent, CampaignEventDto, EventName } from '../dto';
 import { Parser } from '../parser';
-import { ExternalApiService } from '../utilities';
+import { ExternalApiService, PaginationService } from '../utilities';
 
 @Injectable()
 export class ApiFetcher extends DataFetcher<CampaignEvent> {
   private static readonly CONFIG = {
-    PAGINATION_DELAY: 1000,
     EVENT_TYPES: [EventName.PURCHASE, EventName.INSTALL]
   } as const;
 
   private readonly state = {
     isRunning: false,
     result$: new Subject<FetchResult<CampaignEvent>>(),
-    paginationQueue: new Set<{ url: string; eventName: EventName }>(),
     cronJob: undefined as CronJob | undefined
   };
 
   private readonly _externalApi: ExternalApiService;
+  private readonly _pagination: PaginationService;
 
   constructor(
     private readonly _config: ConfigService,
@@ -40,6 +39,7 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
       this._config.getOrThrow('api.url'),
       this._config.getOrThrow('api.key')
     );
+    this._pagination = new PaginationService();
   }
 
   private initializeCronJob(): void {
@@ -61,7 +61,7 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
       }
 
       if (response.data.pagination?.next) {
-        this.state.paginationQueue.add({ url: response.data.pagination.next, eventName });
+        this._pagination.addToQueue(response.data.pagination.next, eventName);
       }
 
       return parsedData;
@@ -87,9 +87,8 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
   }
 
   private async handlePagination(): Promise<void> {
-    while (this.state.paginationQueue.size > 0 && this.state.isRunning) {
-      const item = this.state.paginationQueue.values().next().value;
-      this.state.paginationQueue.delete(item);
+    while (this._pagination.hasItems() && this.state.isRunning) {
+      const item = this._pagination.getNextItem() as { url: string; eventName: EventName };
 
       try {
         const response = await this._externalApi.makeRequest({ 
@@ -118,13 +117,10 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
         }
         
         if (response.data.pagination?.next) {
-          this.state.paginationQueue.add({
-            url: response.data.pagination.next,
-            eventName: item.eventName
-          });
+          this._pagination.addToQueue(response.data.pagination.next, item.eventName);
         }
 
-        await new Promise(resolve => setTimeout(resolve, ApiFetcher.CONFIG.PAGINATION_DELAY));
+        await this._pagination.delay();
       } catch (error) {
         this.handleError(error, `Failed to fetch paginated ${item.eventName} events`);
         break;
@@ -154,7 +150,7 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
         });
       }
 
-      if (this.state.paginationQueue.size > 0) {
+      if (this._pagination.hasItems()) {
         await this.handlePagination();
       }
     } catch (error) {
@@ -168,7 +164,7 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
       next: async (result) => {
         this.state.result$.next(result);
         
-        if (this.state.paginationQueue.size > 0) {
+        if (this._pagination.hasItems()) {
           await this.handlePagination();
         }
       },
