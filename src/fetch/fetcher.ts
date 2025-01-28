@@ -11,7 +11,6 @@ export abstract class DataFetcher<T> {
   constructor() {}
 
   protected abstract fetch(): Observable<FetchResult<T>>;
-  protected abstract validateData(data: unknown): data is T[];
   
   abstract start(): Observable<FetchResult<T>>;
   abstract stop(): void;
