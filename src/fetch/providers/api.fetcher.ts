@@ -9,9 +9,10 @@ import { validateSync } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { AxiosRequestConfig } from 'axios';
 
+import { CampaignReportService } from '../../database';
 import { DataFetcher, FetchResult } from '../fetcher';
 import { CampaignEvent, CampaignEventDto, EventName, FetchSuccessDto } from '../dto';
-import { CampaignReportService } from '../../database';
+import { Parser } from '../parser';
 
 @Injectable()
 export class ApiFetcher extends DataFetcher<CampaignEvent> {
@@ -38,10 +39,11 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
   };
 
   constructor(
-    private readonly configService: ConfigService,
-    private readonly cronExpression: string,
+    private readonly _config: ConfigService,
+    private readonly _cronExpression: string,
     private schedulerRegistry: SchedulerRegistry,
-    private campaignReportService: CampaignReportService
+    private campaignReportService: CampaignReportService,
+    private parser: Parser<string, CampaignEventDto>
   ) {
     super();
     this.initializeApi();
@@ -49,14 +51,14 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
   }
 
   private initializeApi(): void {
-    this.api.url = this.configService.getOrThrow('api.url');
-    this.api.key = this.configService.getOrThrow('api.key');
+    this.api.url = this._config.getOrThrow('api.url');
+    this.api.key = this._config.getOrThrow('api.key');
     this.api.headers['x-api-key'] = this.api.key;
   }
 
   private initializeCronJob(): void {
     this.state.cronJob = new CronJob(
-      this.cronExpression, 
+      this._cronExpression, 
       () => this.handleCron().catch(this.handleError)
     );
   }
@@ -111,38 +113,22 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
     return response;
   }
 
-  private parseEvents(csv: string): CampaignEvent[] {
-    const [_header, ...lines] = csv.split('\n');
-    return lines
-      .filter(line => line.trim())
-      .map(this.parseCsvLine);
-  }
-
-  private parseCsvLine(line: string): CampaignEvent {
-    const [
-      ad, ad_id, adgroup, adgroup_id,
-      campaign, campaign_id, client_id,
-      event_name, event_time
-    ] = line.split(',');
-
-    return {
-      ad, ad_id, adgroup, adgroup_id,
-      campaign, campaign_id, client_id,
-      event_name: event_name as EventName,
-      event_time
-    };
-  }
-
   private async fetchEventType(eventName: EventName): Promise<CampaignEvent[]> {
     try {
       const response = await this.makeRequest(this.constructUrl(eventName));
-      const events = this.parseEvents(response.data.csv);
+      const events = this.parser.parse(response.data.csv);
+
+      const { data: parsedData, errors: parsingErrors } = events;
+
+      if (parsingErrors.length) {
+        parsingErrors.forEach(error => console.error(error.message))
+      }
 
       if (response.data.pagination?.next) {
         this.state.paginationQueue.add({ url: response.data.pagination.next, eventName });
       }
 
-      return events;
+      return parsedData;
     } catch (error) {
       this.handleError(error, `Failed to fetch ${eventName} events`);
       return [];
@@ -175,22 +161,26 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
           headers: this.api.headers 
         });
 
-        const events = this.parseEvents(response.data.csv);
-        if (this.validateData(events)) {
-          const result = {
-            data: events,
-            timestamp: new Date()
-          };
-          
-          this.state.result$.next(result);
+        const events = this.parser.parse(response.data.csv);
+        const { data: parsedData, errors: parsingErrors } = events;
 
-          if (events.length > 0) {
-            this.campaignReportService.saveReports(events).subscribe({
-              error: (error) => this.handleError(error, 'Failed to save paginated reports to database')
-            });
-          }
+        if (parsingErrors.length) {
+          parsingErrors.forEach(error => console.error(error.message))
         }
 
+        const result = {
+          data: parsedData,
+          timestamp: new Date()
+        };
+        
+        this.state.result$.next(result);
+
+        if (parsedData.length > 0) {
+          this.campaignReportService.saveReports(parsedData).subscribe({
+            error: (error) => this.handleError(error, 'Failed to save paginated reports to database')
+          });
+        }
+        
         if (response.data.pagination?.next) {
           this.state.paginationQueue.add({
             url: response.data.pagination.next,
@@ -268,13 +258,6 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
     this.state.result$.complete();
   }
 
-  protected validateData(data: unknown): data is CampaignEvent[] {
-    if (!Array.isArray(data)) return false;
-
-    const events = data.map(item => plainToInstance(CampaignEventDto, item));
-    return events.every(event => validateSync(event).length === 0);
-  }
-
   override fetchDateRange(fromDate: string, toDate: string): Observable<void> {
     const urls = ApiFetcher.CONFIG.EVENT_TYPES.map(eventName => 
       this.constructUrl(eventName, fromDate, toDate)
@@ -284,10 +267,17 @@ export class ApiFetcher extends DataFetcher<CampaignEvent> {
       mergeMap(config => 
         from(this.makeRequest(config)).pipe(
           mergeMap(response => {
-            const events = this.parseEvents(response.data.csv);
-            if (this.validateData(events) && events.length > 0) {
-              return this.campaignReportService.saveReports(events);
+            const events = this.parser.parse(response.data.csv);
+            const { data: parsedData, errors: parsingErrors } = events;
+
+            if (parsingErrors.length) {
+              parsingErrors.forEach(error => console.error(error.message))
             }
+
+            if (parsedData.length > 0) {
+              return this.campaignReportService.saveReports(parsedData);
+            }
+
             return of(void 0);
           })
         )
